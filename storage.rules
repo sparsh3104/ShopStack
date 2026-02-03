@@ -1,0 +1,27 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Product images - admin upload only
+    match /products/{allPaths=**} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Invoices - admin and order owner can read
+    match /invoices/{fileName} {
+      allow read: if isAdmin() || isInvoiceOwner(fileName);
+      allow create, update, delete: if false;
+    }
+
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return request.auth.uid != null &&
+             request.auth.token.admin == true;
+    }
+
+    // Helper function to check if user owns the invoice
+    function isInvoiceOwner(fileName) {
+      return false; // Invoices are generated server-side, clients shouldn't directly access
+    }
+  }
+}
