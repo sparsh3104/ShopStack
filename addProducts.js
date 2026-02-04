@@ -1,33 +1,16 @@
+#!/usr/bin/env node
+
 /**
- * ShopStack - Demo Data Initialization Script
- * 
- * This script initializes the Firebase database with demo products and admin/customer users.
- * Run this script once after deploying to Firebase to populate the database with sample data.
- * 
- * Usage: node initializeData.js
+ * ShopStack - Direct Firestore Product Adder
+ * Uses web SDK to directly add products to Firebase
  */
 
-const admin = require('firebase-admin');
+const https = require('https');
 
-// Initialize Firebase Admin SDK
-const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+const FIRESTORE_URL = 'https://firestore.googleapis.com/v1/projects/shopstack-5351f/databases/(default)/documents/products';
+const API_KEY = 'AIzaSyARKYbJGqCUPwb8GR1s6JKUHIeyBe2L7Z8';
 
-if (!serviceAccountPath) {
-  console.error('Error: GOOGLE_APPLICATION_CREDENTIALS environment variable not set');
-  console.error('Set it to your Firebase service account key JSON file path');
-  process.exit(1);
-}
-
-const serviceAccount = require(serviceAccountPath);
-
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
-
-const db = admin.firestore();
-
-// Demo products data - Hardware oriented
-const DEMO_PRODUCTS = [
+const PRODUCTS = [
   {
     name: 'Wireless Bluetooth Headphones Pro',
     price: 129.99,
@@ -225,90 +208,104 @@ const DEMO_PRODUCTS = [
   }
 ];
 
-// Demo users data
-const DEMO_USERS = [
-  {
-    email: 'admin@shopstack.com',
-    password: 'admin123',
-    displayName: 'Admin User',
-    role: 'admin'
-  },
-  {
-    email: 'customer@shopstack.com',
-    password: 'customer123',
-    displayName: 'John Doe',
-    role: 'customer'
+function convertToFirestoreValue(value) {
+  if (value === null || value === undefined) {
+    return { nullValue: null };
   }
-];
-
-async function initializeData() {
-  try {
-    console.log('🚀 Initializing ShopStack demo data...\n');
-
-    // Create users
-    console.log('Creating demo users...');
-    const usersSnapshot = await db.collection('users').get();
-    
-    if (usersSnapshot.empty) {
-      for (const user of DEMO_USERS) {
-        try {
-          const userRecord = await admin.auth().createUser({
-            email: user.email,
-            password: user.password,
-            displayName: user.displayName
-          });
-
-          await db.collection('users').doc(userRecord.uid).set({
-            uid: userRecord.uid,
-            name: user.displayName,
-            email: user.email,
-            role: user.role,
-            createdAt: new Date()
-          });
-
-          console.log(`✅ Created ${user.role}: ${user.email}`);
-        } catch (error) {
-          if (error.code === 'auth/email-already-exists') {
-            console.log(`⚠️  User ${user.email} already exists`);
-          } else {
-            console.error(`❌ Error creating user ${user.email}:`, error.message);
-          }
+  if (typeof value === 'string') {
+    return { stringValue: value };
+  }
+  if (typeof value === 'number') {
+    if (Number.isInteger(value)) {
+      return { integerValue: value.toString() };
+    }
+    return { doubleValue: value };
+  }
+  if (typeof value === 'boolean') {
+    return { booleanValue: value };
+  }
+  if (typeof value === 'object') {
+    if (Array.isArray(value)) {
+      return {
+        arrayValue: {
+          values: value.map(v => convertToFirestoreValue(v))
         }
-      }
-    } else {
-      console.log('ℹ️  Users already exist, skipping user creation');
+      };
     }
-
-    // Create products
-    console.log('\nCreating demo products...');
-    const productsSnapshot = await db.collection('products').get();
-    
-    if (productsSnapshot.empty) {
-      let createdCount = 0;
-      for (const product of DEMO_PRODUCTS) {
-        await db.collection('products').add({
-          ...product,
-          createdAt: new Date()
-        });
-        createdCount++;
+    return {
+      mapValue: {
+        fields: Object.entries(value).reduce((acc, [key, val]) => {
+          acc[key] = convertToFirestoreValue(val);
+          return acc;
+        }, {})
       }
-      console.log(`✅ Created ${createdCount} demo products`);
-    } else {
-      console.log(`ℹ️  Products already exist (${productsSnapshot.size} found), skipping product creation`);
-    }
-
-    console.log('\n✅ Demo data initialization complete!');
-    console.log('\nYou can now login with:');
-    console.log('  Admin:    admin@shopstack.com / admin123');
-    console.log('  Customer: customer@shopstack.com / customer123');
-    console.log('\nHappy shopping! 🛍️\n');
-
-  } catch (error) {
-    console.error('❌ Error initializing data:', error);
-    process.exit(1);
-  } finally {
-    process.exit(0);
+    };
   }
+  return { stringValue: String(value) };
 }
 
-initializeData();
+function addProduct(product) {
+  return new Promise((resolve, reject) => {
+    const fields = {};
+    
+    Object.entries(product).forEach(([key, value]) => {
+      fields[key] = convertToFirestoreValue(value);
+    });
+
+    fields.createdAt = {
+      timestampValue: new Date().toISOString()
+    };
+
+    const postData = JSON.stringify({
+      fields: fields
+    });
+
+    const options = {
+      hostname: 'firestore.googleapis.com',
+      path: `/v1/projects/shopstack-5351f/databases/(default)/documents/products?key=${API_KEY}`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        if (res.statusCode === 200 || res.statusCode === 201) {
+          resolve(product.name);
+        } else {
+          reject(new Error(`Status ${res.statusCode}: ${data}`));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.write(postData);
+    req.end();
+  });
+}
+
+async function seedAllProducts() {
+  console.log('🚀 Adding products to Firebase Firestore...\n');
+  
+  let count = 0;
+  for (const product of PRODUCTS) {
+    try {
+      await addProduct(product);
+      count++;
+      console.log(`✅ Added: ${product.name}`);
+    } catch (error) {
+      console.log(`⚠️  Skipped: ${product.name} (${error.message.split(':')[0]})`);
+    }
+  }
+
+  console.log(`\n✨ Successfully added ${count}/${PRODUCTS.length} products!`);
+}
+
+seedAllProducts().catch(error => {
+  console.error('❌ Error:', error.message);
+  process.exit(1);
+});

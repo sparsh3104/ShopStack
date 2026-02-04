@@ -13,6 +13,8 @@ import Orders from './pages/Orders';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminProducts from './pages/AdminProducts';
 import AdminOrders from './pages/AdminOrders';
+import SeedProducts from './pages/SeedProducts';
+import Initialize from './pages/Initialize';
 import './App.css';
 
 function App() {
@@ -26,6 +28,8 @@ function App() {
               <Routes>
                 <Route path="/login" element={<Login />} />
                 <Route path="/signup" element={<Signup />} />
+                <Route path="/seed-products" element={<SeedProducts />} />
+                <Route path="/initialize" element={<Initialize />} />
                 
                 <Route path="/" element={
                   <ProtectedRoute>

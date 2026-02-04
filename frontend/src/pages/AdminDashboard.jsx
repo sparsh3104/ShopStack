@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import './AdminDashboard.css';
 
@@ -12,6 +12,8 @@ export default function AdminDashboard() {
     totalRevenue: 0
   });
   const [loading, setLoading] = useState(true);
+  const [seeding, setSeeding] = useState(false);
+  const [seedMessage, setSeedMessage] = useState('');
 
   useEffect(() => {
     fetchStats();
@@ -43,6 +45,158 @@ export default function AdminDashboard() {
     }
   }
 
+  async function seedProducts() {
+    if (!confirm('This will add 13 hardware products to your database. Continue?')) {
+      return;
+    }
+
+    setSeeding(true);
+    setSeedMessage('Adding products...');
+
+    const products = [
+      {
+        name: 'Wireless Bluetooth Headphones Pro',
+        price: 129.99,
+        description: 'Premium noise-canceling wireless headphones with 40-hour battery life, Bluetooth 5.0, built-in mic',
+        stock: 25,
+        category: 'Audio',
+        imageUrl: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=300&h=300&fit=crop',
+        specifications: { brand: 'TechAudio', batteryLife: '40 hours', connectivity: 'Bluetooth 5.0', weight: '250g', warranty: '2 years' }
+      },
+      {
+        name: 'High-Speed USB-C Cable 3.1',
+        price: 15.99,
+        description: 'Premium 6-foot USB-C 3.1 cable for fast charging and data transfer up to 10Gbps',
+        stock: 100,
+        category: 'Cables & Adapters',
+        imageUrl: 'https://images.unsplash.com/photo-1625948515291-69613efd103f?w=300&h=300&fit=crop',
+        specifications: { length: '6 feet', version: 'USB 3.1', dataTransfer: '10Gbps', chargingAmperage: '5A', warranty: '1 year' }
+      },
+      {
+        name: 'Ergonomic Phone Stand Adjustable',
+        price: 19.99,
+        description: 'Adjustable aluminum phone stand for desk, compatible with all smartphones and tablets',
+        stock: 50,
+        category: 'Accessories',
+        imageUrl: 'https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=300&h=300&fit=crop',
+        specifications: { material: 'Aluminum', compatibility: 'Universal', adjustability: 'Full 360°', maxWeight: '2kg', warranty: '1 year' }
+      },
+      {
+        name: 'Mechanical Gaming Keyboard RGB',
+        price: 79.99,
+        description: 'Professional mechanical keyboard with RGB backlight, tactile switches, 60% compact design',
+        stock: 30,
+        category: 'Keyboards',
+        imageUrl: 'https://images.unsplash.com/photo-1587829191301-26a1489c1fc6?w=300&h=300&fit=crop',
+        specifications: { switchType: 'Mechanical', layout: '60% Compact', backlight: 'RGB', keyCount: '61', warranty: '2 years' }
+      },
+      {
+        name: 'USB 3.0 Flash Drive 64GB',
+        price: 24.99,
+        description: 'High-speed USB 3.0 flash drive with 64GB storage capacity and secure encryption',
+        stock: 75,
+        category: 'Storage',
+        imageUrl: 'https://images.unsplash.com/photo-1597872200969-2b65d56bd16b?w=300&h=300&fit=crop',
+        specifications: { capacity: '64GB', interface: 'USB 3.0', readSpeed: '150MB/s', writeSpeed: '90MB/s', warranty: '5 years' }
+      },
+      {
+        name: 'Tempered Glass Screen Protector Pack',
+        price: 9.99,
+        description: 'Pack of 3 premium tempered glass screen protectors with installation kit',
+        stock: 200,
+        category: 'Phone Accessories',
+        imageUrl: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=300&h=300&fit=crop',
+        specifications: { quantity: '3 pcs', thickness: '0.3mm', hardness: '9H', compatibility: 'Most smartphones', warranty: '6 months' }
+      },
+      {
+        name: 'Premium Aluminum Laptop Stand',
+        price: 49.99,
+        description: 'Heavy-duty aluminum laptop stand for improved ergonomics and cooling, adjustable height',
+        stock: 40,
+        category: 'Laptop Accessories',
+        imageUrl: 'https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?w=300&h=300&fit=crop',
+        specifications: { material: 'Aluminum Alloy', compatibility: '10"-17" laptops', adjustment: 'Adjustable Height & Angle', maxLoad: '25kg', warranty: '3 years' }
+      },
+      {
+        name: 'External SSD 1TB USB-C',
+        price: 99.99,
+        description: 'Portable 1TB external SSD with USB-C 3.1 interface, 550MB/s transfer speed',
+        stock: 35,
+        category: 'Storage',
+        imageUrl: 'https://images.unsplash.com/photo-1597872200969-2b65d56bd16b?w=300&h=300&fit=crop',
+        specifications: { capacity: '1TB', interface: 'USB-C 3.1', readSpeed: '550MB/s', writeSpeed: '450MB/s', warranty: '5 years' }
+      },
+      {
+        name: 'Wireless Mouse Pro',
+        price: 39.99,
+        description: 'Precision wireless mouse with 2.4GHz receiver, ergonomic design, 18-month battery',
+        stock: 60,
+        category: 'Mice',
+        imageUrl: 'https://images.unsplash.com/photo-1527814050087-3793815479db?w=300&h=300&fit=crop',
+        specifications: { connectivity: '2.4GHz Wireless', dpi: '3200 DPI', batteryLife: '18 months', buttons: '6 programmable', warranty: '2 years' }
+      },
+      {
+        name: '4K Webcam Professional',
+        price: 129.99,
+        description: '4K resolution webcam with autofocus, stereo microphone, USB plug-and-play',
+        stock: 20,
+        category: 'Video',
+        imageUrl: 'https://images.unsplash.com/photo-1598211165051-faa9a5cbe3a0?w=300&h=300&fit=crop',
+        specifications: { resolution: '4K (2160p)', frameRate: '30fps', autofocus: 'Yes', microphone: 'Stereo', warranty: '2 years' }
+      },
+      {
+        name: 'Portable Phone Charger 20000mAh',
+        price: 34.99,
+        description: 'High-capacity portable power bank with dual USB and USB-C output, 20000mAh capacity',
+        stock: 80,
+        category: 'Power & Charging',
+        imageUrl: 'https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=300&h=300&fit=crop',
+        specifications: { capacity: '20000mAh', output: 'Dual USB + USB-C', fastCharging: 'Yes', weight: '380g', warranty: '2 years' }
+      },
+      {
+        name: 'USB Hub 7-Port Active',
+        price: 44.99,
+        description: 'Active USB 3.0 hub with 7 ports, power adapter included, hot-swappable',
+        stock: 45,
+        category: 'Hubs & Adapters',
+        imageUrl: 'https://images.unsplash.com/photo-1625948515291-69613efd103f?w=300&h=300&fit=crop',
+        specifications: { ports: '7x USB 3.0', powerSupply: 'Included', dataTransfer: '5Gbps', compatible: 'Windows & Mac', warranty: '2 years' }
+      },
+      {
+        name: 'HDMI 2.1 Cable 8K Support',
+        price: 21.99,
+        description: 'Premium HDMI 2.1 cable with 8K support at 120Hz, 2 meters length, gold-plated connectors',
+        stock: 90,
+        category: 'Cables & Adapters',
+        imageUrl: 'https://images.unsplash.com/photo-1625948515291-69613efd103f?w=300&h=300&fit=crop',
+        specifications: { standard: 'HDMI 2.1', support: '8K@120Hz', length: '2 meters', connector: 'Gold-plated', warranty: '3 years' }
+      }
+    ];
+
+    try {
+      let count = 0;
+      for (const product of products) {
+        await addDoc(collection(db, 'products'), {
+          ...product,
+          createdAt: serverTimestamp()
+        });
+        count++;
+        setSeedMessage(`Added ${count}/${products.length} products...`);
+      }
+
+      setSeedMessage(`✅ Successfully added ${count} products!`);
+      setTimeout(() => {
+        fetchStats();
+        setSeedMessage('');
+      }, 2000);
+    } catch (error) {
+      console.error('Error seeding products:', error);
+      setSeedMessage(`❌ Error: ${error.message}`);
+    } finally {
+      setSeeding(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="page-container">
@@ -54,6 +208,21 @@ export default function AdminDashboard() {
   return (
     <div className="page-container">
       <h1>Admin Dashboard</h1>
+
+      {stats.totalProducts === 0 && (
+        <div className="seed-products-banner">
+          <h3>🚀 No products found!</h3>
+          <p>Click the button below to add 13 hardware products to your store.</p>
+          <button 
+            onClick={seedProducts} 
+            disabled={seeding}
+            className="btn-seed-products"
+          >
+            {seeding ? '⏳ Adding Products...' : '✨ Add Sample Products'}
+          </button>
+          {seedMessage && <p className="seed-message">{seedMessage}</p>}
+        </div>
+      )}
 
       <div className="dashboard-stats">
         <div className="stat-card">

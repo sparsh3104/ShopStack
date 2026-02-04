@@ -8,24 +8,42 @@ export default function Orders() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const { currentUser } = useAuth();
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [filterStatus, setFilterStatus] = useState('all');
+  const { currentUser, isAdmin } = useAuth();
 
   useEffect(() => {
     fetchOrders();
-  }, [currentUser]);
+  }, [currentUser, filterStatus]);
 
   async function fetchOrders() {
     try {
-      const q = query(
-        collection(db, 'orders'),
-        where('userId', '==', currentUser.uid),
-        orderBy('createdAt', 'desc')
-      );
+      let q;
+      if (isAdmin) {
+        // Admin sees all orders
+        q = query(
+          collection(db, 'orders'),
+          orderBy('createdAt', 'desc')
+        );
+      } else {
+        // Regular users see only their orders
+        q = query(
+          collection(db, 'orders'),
+          where('userId', '==', currentUser.uid),
+          orderBy('createdAt', 'desc')
+        );
+      }
       const snapshot = await getDocs(q);
-      const ordersData = snapshot.docs.map(doc => ({
+      let ordersData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
+
+      // Filter by status if not 'all'
+      if (filterStatus !== 'all') {
+        ordersData = ordersData.filter(order => order.status === filterStatus);
+      }
+
       setOrders(ordersData);
     } catch (err) {
       console.error('Error fetching orders:', err);
@@ -52,8 +70,16 @@ export default function Orders() {
     return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
-      day: 'numeric'
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
     });
+  }
+
+  function downloadInvoice(order) {
+    if (order.invoiceUrl) {
+      window.open(order.invoiceUrl, '_blank');
+    }
   }
 
   if (loading) {
@@ -74,11 +100,29 @@ export default function Orders() {
 
   return (
     <div className="page-container">
-      <h1>My Orders</h1>
+      <div className="orders-header">
+        <h1>{isAdmin ? 'All Purchase Orders' : 'My Orders'}</h1>
+        {isAdmin && (
+          <div className="filter-controls">
+            <select 
+              value={filterStatus} 
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="status-filter"
+            >
+              <option value="all">All Orders</option>
+              <option value="pending">Pending</option>
+              <option value="processing">Processing</option>
+              <option value="shipped">Shipped</option>
+              <option value="delivered">Delivered</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+        )}
+      </div>
 
       {orders.length === 0 ? (
         <div className="empty-state">
-          <p>You haven't placed any orders yet.</p>
+          <p>{isAdmin ? 'No orders found.' : "You haven't placed any orders yet."}</p>
         </div>
       ) : (
         <div className="orders-list">
@@ -88,6 +132,11 @@ export default function Orders() {
                 <div className="order-info">
                   <h3>Order #{order.id.substring(0, 8).toUpperCase()}</h3>
                   <p className="order-date">{formatDate(order.createdAt)}</p>
+                  {isAdmin && (
+                    <p className="order-customer">
+                      Customer: <strong>{order.userEmail}</strong>
+                    </p>
+                  )}
                 </div>
                 <div className="order-status">
                   <span className={`status-badge ${getStatusClass(order.status)}`}>
@@ -97,33 +146,67 @@ export default function Orders() {
               </div>
 
               <div className="order-items">
+                <div className="items-header">
+                  <span>Product</span>
+                  <span>Qty</span>
+                  <span>Price</span>
+                  <span>Subtotal</span>
+                </div>
                 {order.items.map((item, idx) => (
                   <div key={idx} className="order-item">
-                    <div className="order-item-info">
-                      <span className="item-name">{item.name}</span>
-                      <span className="item-qty">Qty: {item.quantity}</span>
-                    </div>
+                    <span className="item-name">{item.name}</span>
+                    <span className="item-qty">{item.quantity}</span>
                     <span className="item-price">${item.price.toFixed(2)}</span>
+                    <span className="item-subtotal">${(item.price * item.quantity).toFixed(2)}</span>
                   </div>
                 ))}
               </div>
 
+              <div className="shipping-info">
+                <h4>Shipping Address</h4>
+                <p>
+                  {order.shippingAddress.address}, {order.shippingAddress.city} {order.shippingAddress.zipCode}
+                </p>
+              </div>
+
               <div className="order-footer">
                 <div className="order-total">
-                  <span>Total:</span>
+                  <span>Total Amount:</span>
                   <span className="total-amount">${order.totalAmount.toFixed(2)}</span>
                 </div>
-                {order.invoiceUrl && (
-                  <a
-                    href={order.invoiceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-invoice"
+                <div className="order-actions">
+                  {order.invoiceUrl && (
+                    <button
+                      onClick={() => downloadInvoice(order)}
+                      className="btn-invoice"
+                    >
+                      📥 Download Invoice
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setSelectedOrder(selectedOrder?.id === order.id ? null : order)}
+                    className="btn-details"
                   >
-                    Download Invoice
-                  </a>
-                )}
+                    {selectedOrder?.id === order.id ? 'Hide Details' : 'View Details'}
+                  </button>
+                </div>
               </div>
+
+              {selectedOrder?.id === order.id && (
+                <div className="order-details-expanded">
+                  <div className="details-section">
+                    <h4>Order Details</h4>
+                    <p>Order ID: {order.id}</p>
+                    <p>Status: {order.status}</p>
+                    <p>Placed on: {formatDate(order.createdAt)}</p>
+                  </div>
+                  <div className="details-section">
+                    <h4>Customer Information</h4>
+                    <p>Email: {order.userEmail}</p>
+                    <p>Phone: {order.shippingAddress.phone}</p>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
